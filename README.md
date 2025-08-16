@@ -29,6 +29,11 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
   # Install gcc which includes cpp
   sudo dnf install gcc
   ```
+- pkg-config for library and include path discovery:
+  ```bash
+  # Install pkg-config
+  sudo dnf install pkgconf-pkg-config
+  ```
 
 ## Installation
 
