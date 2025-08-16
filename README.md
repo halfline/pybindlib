@@ -34,6 +34,24 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
 
 ## Usage
 
+The generated bindings provide a clean Python API:
+
+```python
+from ctypes import *
+from example.types import MyStruct
+from example.symbols import my_function
+from example.constants import BUFFER_SIZE
+
+# Create and use structures
+structure = MyStruct()
+structure.field = BUFFER_SIZE
+
+# Call library functions
+my_function.argtypes = [POINTER(MyStruct)]
+my_function.restype = c_int
+result = my_function(byref(structure))
+```
+
 ## Development
 
 To set up a development environment:
