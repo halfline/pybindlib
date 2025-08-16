@@ -14,6 +14,7 @@ __all__: list[str] = [
     "identifiers",
     "logger",
     "output",
+    "paths",
     "preprocessor",
     "progress",
 ]
