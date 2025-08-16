@@ -34,6 +34,25 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
 
 ## Usage
 
+Generate bindings for a shared library:
+
+```bash
+# Basic usage
+pybindlib /usr/lib/libexample.so
+
+# Extract constants from headers
+pybindlib --headers /usr/include/example.h /usr/lib/libexample.so
+
+# Add include paths for header processing
+pybindlib -I /usr/include -I /usr/local/include --headers /usr/include/example.h /usr/lib/libexample.so
+
+# Specify output file
+pybindlib -o bindings.py /usr/lib/libexample.so
+
+# Enable verbose output
+pybindlib -v /usr/lib/libexample.so
+```
+
 The generated bindings provide a clean Python API:
 
 ```python

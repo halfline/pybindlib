@@ -29,3 +29,7 @@ packages = ["pybindlib"]
 dev = [
     "pytest>=8.4.1",
 ]
+
+[project.scripts]
+pybindlib = "pybindlib.cli:main"
+

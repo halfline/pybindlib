@@ -1,0 +1,4 @@
+#!/bin/bash
+# pybindlib CLI wrapper
+cd "$(dirname "$0")/.." || exit 1
+exec uv run pybindlib "$@" 
