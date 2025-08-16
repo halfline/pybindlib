@@ -9,6 +9,7 @@ from .logging import logger
 
 __all__: list[str] = [
     "__version__",
+    "debug_info",
     "identifiers",
     "logger",
     "output",

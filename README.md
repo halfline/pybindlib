@@ -1,7 +1,15 @@
 # pybindlib
 Generate Python ctypes bindings from shared libraries.
 
-A tool to help generate Python ctypes bindings from shared libraries.
+A tool to help generate Python ctypes bindings from shared libraries. It reads DWARF debug information from library files to understand C structures and types, then generates equivalent Python classes.
+
+## Features
+
+- Reads DWARF debug information to understand C types and structures
+- Generates Python ctypes classes that match the C structures
+- Handles complex type relationships and dependencies
+- Creates proper Python modules with types, symbols, and constants submodules
+- Provides clean imports like `from mylib.types import MyStruct`
 
 ## Requirements
 
