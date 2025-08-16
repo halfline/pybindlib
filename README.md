@@ -10,6 +10,7 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
 - Handles complex type relationships and dependencies
 - Creates proper Python modules with types, symbols, and constants submodules
 - Provides clean imports like `from mylib.types import MyStruct`
+- Extracts constants and macros from header files
 
 ## Requirements
 
@@ -22,6 +23,11 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
   # Or enable debuginfo repos and install manually
   sudo dnf install 'dnf-command(debuginfo-install)'
   sudo dnf debuginfo-install libfreerdp3
+  ```
+- C preprocessor (cpp) for header file analysis:
+  ```bash
+  # Install gcc which includes cpp
+  sudo dnf install gcc
   ```
 
 ## Installation
