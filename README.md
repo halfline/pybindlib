@@ -49,6 +49,9 @@ pybindlib -I /usr/include -I /usr/local/include --headers /usr/include/example.h
 # Specify output file
 pybindlib -o bindings.py /usr/lib/libexample.so
 
+# Process multiple libraries at once
+pybindlib -o output/ libone.so libtwo.so
+
 # Enable verbose output
 pybindlib -v /usr/lib/libexample.so
 ```

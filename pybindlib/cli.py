@@ -41,14 +41,16 @@ Examples:
   %(prog)s --output my_bindings.py /path/to/library.so
   %(prog)s --output ./output/ /path/to/library.so
   %(prog)s --output output/bindings.py /path/to/library.so
+  %(prog)s ./libone.so ./libtwo.so
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
-        "library_path",
+        "library_paths",
         metavar="LIBRARY_PATH",
-        help="Path to the shared library or debug file to analyze",
+        nargs="+",
+        help="Path(s) to the shared library or debug file to analyze",
     )
 
     parser.add_argument(
@@ -122,128 +124,177 @@ def run_generation_pipeline(args: argparse.Namespace) -> None:
 
     print_banner(use_color=use_color)
 
-    print_section_header("Loading Library", use_color=use_color)
-    logger.info(f"Loading library: {args.library_path}")
-    debug_files, library_name, debug_file_path, build_id, exported_functions = (
-        load_library_and_debug_info(args.library_path)
-    )
-
-    print_file_info("Library name", library_name, use_color=use_color)
-    print_file_info("Build ID", build_id or "unknown", use_color=use_color)
-    print_file_info("Debug file", debug_file_path, use_color=use_color)
-
-    # Show information about the debug files found
-    if debug_files.main_file:
-        logger.debug(f"Main debuginfo file: {debug_files.main_file.file_path}")
-    if debug_files.has_auxiliary():
-        print_file_info(
-            "Auxiliary debuginfo file",
-            debug_files.auxiliary_file.file_path,
-            use_color=use_color,
-        )
-        logger.debug(f"Auxiliary file: {debug_files.auxiliary_file.file_path}")
-
-    print()
-    print_section_header("Analyzing Debug Information", use_color=use_color)
-    all_structures, all_typedefs = collect_all_structures_and_typedefs(
-        debug_files, skip_progress=args.skip_progress
-    )
-
-    # Process header files if provided
-    macros = {}
+    # Preprocess headers once if provided
+    macros_from_headers: dict[str, str] = {}
+    function_pointer_typedefs_from_headers: set[str] = set()
     if args.headers:
-        print()
         print_section_header("Processing Headers", use_color=use_color)
         logger.info(f"Processing {len(args.headers)} header files...")
-        macros = (
-            process_headers(args.headers, args.include_paths, args.modules)
-            or {}
-        )
-        logger.info(f"Extracted {len(macros)} macro definitions")
-
-    # Filter typedefs if requested
-    if args.skip_typedefs:
-        all_typedefs = {}
-        logger.debug("Skipping typedefs per --skip-typedefs option")
-    # Best-effort: add function-pointer typedefs discovered from headers as c_void_p
-    elif args.headers:
-        logger.debug(
-            "Scanning headers for function-pointer typedefs to supplement DWARF typedefs"
-        )
-        fn_typedefs = parse_function_pointer_typedefs(args.headers)
-        added = 0
-        for typedef_name in fn_typedefs:
-            if typedef_name not in all_typedefs:
-                all_typedefs[typedef_name] = TypedefInfo(
-                    representation="c_void_p",
-                    quality_score=QualityScore(base_score=4, size_score=1),
-                    description="pointer to function type",
-                )
-                added += 1
-        logger.debug(f"Added {added} function-pointer typedefs from headers")
-
-    # Determine output filename
-    if args.output:
-        if os.path.isdir(args.output):
-            # If output is a directory, generate filename and place it there
-            generated_filename = generate_output_filename(
-                library_name, args.library_path
+        macros_from_headers = process_headers(
+            args.headers, args.include_paths, args.modules
+        ) or {}
+        logger.info(f"Extracted {len(macros_from_headers)} macro definitions")
+        if not args.skip_typedefs:
+            logger.debug(
+                "Scanning headers for function-pointer typedefs to supplement DWARF typedefs"
             )
-            output_filename = os.path.join(args.output, generated_filename)
-            logger.debug(f"Output is directory, using: {output_filename}")
+            function_pointer_typedefs_from_headers = set(
+                parse_function_pointer_typedefs(args.headers)
+            )
+
+    # Determine output directory behavior for multiple libraries
+    multiple_libraries = len(getattr(args, "library_paths", []) or []) > 1
+    output_is_directory_for_multiple = False
+    output_directory: str | None = None
+    if args.output and multiple_libraries:
+        # Treat output as directory only; create if necessary
+        if os.path.isdir(args.output):
+            output_is_directory_for_multiple = True
+            output_directory = args.output
         else:
-            # If output is a file path (or doesn't exist yet), use it directly
-            output_filename = args.output
-
-            # Auto-create parent directories only when path structure is unambiguous:
-            # - Path ends with directory separator (e.g., "output/") - clearly a directory
-            # - OR path has any directory separators (e.g., "output/file.py", "path/to/file.py")
-            # Skip only the ambiguous case: single component with no separators (e.g., "output")
-            separators = [os.sep]
+            # If the path ends with a path separator, treat as directory and create
+            seps = [os.sep]
             if os.altsep:
-                separators.append(os.altsep)
+                seps.append(os.altsep)
+            if any(args.output.endswith(sep) for sep in seps):
+                os.makedirs(args.output, exist_ok=True)
+                output_is_directory_for_multiple = True
+                output_directory = args.output
+            else:
+                raise ValueError(
+                    "When multiple libraries are provided, --output must be a directory (e.g., './out/')."
+                )
 
-            has_separators = any(sep in output_filename for sep in separators)
+    # Process each library
+    for library_path in args.library_paths:
+        print()
+        print_section_header("Loading Library", use_color=use_color)
+        logger.info(f"Loading library: {library_path}")
+        (
+            debug_files,
+            library_name,
+            debug_file_path,
+            build_id,
+            exported_functions,
+        ) = load_library_and_debug_info(library_path)
 
-            if has_separators:
-                parent_dir = os.path.dirname(output_filename)
-                if parent_dir and not os.path.exists(parent_dir):
-                    logger.debug(f"Creating parent directories: {parent_dir}")
-                    os.makedirs(parent_dir, exist_ok=True)
-    else:
-        output_filename = generate_output_filename(
-            library_name, args.library_path
+        print_file_info("Library name", library_name, use_color=use_color)
+        print_file_info("Build ID", build_id or "unknown", use_color=use_color)
+        print_file_info("Debug file", debug_file_path, use_color=use_color)
+
+        # Show information about the debug files found
+        if debug_files.main_file:
+            logger.debug(f"Main debuginfo file: {debug_files.main_file.file_path}")
+        if debug_files.has_auxiliary():
+            print_file_info(
+                "Auxiliary debuginfo file",
+                debug_files.auxiliary_file.file_path,
+                use_color=use_color,
+            )
+            logger.debug(
+                f"Auxiliary file: {debug_files.auxiliary_file.file_path}"
+            )
+
+        print()
+        print_section_header("Analyzing Debug Information", use_color=use_color)
+        all_structures, all_typedefs = collect_all_structures_and_typedefs(
+            debug_files, skip_progress=args.skip_progress
         )
 
-    print()
-    print_section_header("Generating Python Module", use_color=use_color)
-    logger.info(f"Generating {output_filename}...")
-    generate_python_module(
-        output_filename,
-        library_name,
-        build_id,
-        all_structures,
-        all_typedefs,
-        exported_functions,
-        macros,
-    )
+        # Filter/augment typedefs
+        if args.skip_typedefs:
+            all_typedefs = {}
+            logger.debug("Skipping typedefs per --skip-typedefs option")
+        elif function_pointer_typedefs_from_headers:
+            added = 0
+            for typedef_name in function_pointer_typedefs_from_headers:
+                if typedef_name not in all_typedefs:
+                    all_typedefs[typedef_name] = TypedefInfo(
+                        representation="c_void_p",
+                        quality_score=QualityScore(base_score=4, size_score=1),
+                        description="pointer to function type",
+                    )
+                    added += 1
+            logger.debug(
+                f"Added {added} function-pointer typedefs from headers"
+            )
 
-    # Strip any trailing whitespace in the generated file
-    strip_trailing_whitespace_from_file(output_filename)
+        # Determine output filename for this library
+        if args.output:
+            if multiple_libraries and output_is_directory_for_multiple:
+                generated_filename = generate_output_filename(
+                    library_name, library_path
+                )
+                output_filename = os.path.join(
+                    output_directory, generated_filename
+                )  # type: ignore[arg-type]
+                logger.debug(
+                    f"Output directory (multiple), using: {output_filename}"
+                )
+            elif os.path.isdir(args.output):
+                # If output is a directory, generate filename and place it there
+                generated_filename = generate_output_filename(
+                    library_name, library_path
+                )
+                output_filename = os.path.join(args.output, generated_filename)
+                logger.debug(
+                    f"Output is directory, using: {output_filename}"
+                )
+            else:
+                # If output is a file path (or doesn't exist yet), use it directly
+                output_filename = args.output
 
-    # Success summary
-    print_success(
-        f"Successfully generated {output_filename}", use_color=use_color
-    )
+                # Auto-create parent directories only when path structure is unambiguous:
+                # - Path ends with directory separator (e.g., "output/") - clearly a directory
+                # - OR path has any directory separators (e.g., "output/file.py", "path/to/file.py")
+                # Skip only the ambiguous case: single component with no separators (e.g., "output")
+                separators = [os.sep]
+                if os.altsep:
+                    separators.append(os.altsep)
 
-    # Print usage example with discovered real function and struct names
-    print_usage_example(
-        debug_files,
-        all_structures,
-        all_typedefs,
-        output_filename,
-        use_color=use_color,
-    )
+                has_separators = any(sep in output_filename for sep in separators)
+
+                if has_separators:
+                    parent_dir = os.path.dirname(output_filename)
+                    if parent_dir and not os.path.exists(parent_dir):
+                        logger.debug(
+                            f"Creating parent directories: {parent_dir}"
+                        )
+                        os.makedirs(parent_dir, exist_ok=True)
+        else:
+            output_filename = generate_output_filename(
+                library_name, library_path
+            )
+
+        print()
+        print_section_header("Generating Python Module", use_color=use_color)
+        logger.info(f"Generating {output_filename}...")
+        generate_python_module(
+            output_filename,
+            library_name,
+            build_id,
+            all_structures,
+            all_typedefs,
+            exported_functions,
+            macros_from_headers,
+        )
+
+        # Strip any trailing whitespace in the generated file
+        strip_trailing_whitespace_from_file(output_filename)
+
+        # Success summary
+        print_success(
+            f"Successfully generated {output_filename}", use_color=use_color
+        )
+
+        # Print usage example with discovered real function and struct names
+        print_usage_example(
+            debug_files,
+            all_structures,
+            all_typedefs,
+            output_filename,
+            use_color=use_color,
+        )
 
 
 def main():
