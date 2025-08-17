@@ -1,0 +1,20 @@
+name: TestPyPI publish
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Build
+        run: uv build --no-sources
+      - name: Publish to TestPyPI
+        run: uv publish --index testpypi
+
