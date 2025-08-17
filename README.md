@@ -11,6 +11,7 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
 - Creates proper Python modules with types, symbols, and constants submodules
 - Provides clean imports like `from mylib.types import MyStruct`
 - Extracts constants and macros from header files
+- Automatically discovers library paths using pkg-config
 
 ## Requirements
 
@@ -56,6 +57,9 @@ pybindlib -o bindings.py /usr/lib/libexample.so
 
 # Process multiple libraries at once
 pybindlib -o output/ libone.so libtwo.so
+
+# Use pkg-config to find library and include paths
+pybindlib --pkgconfig freerdp3 --headers /usr/include/freerdp3/freerdp.h
 
 # Enable verbose output
 pybindlib -v /usr/lib/libexample.so

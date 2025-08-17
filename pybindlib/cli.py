@@ -26,6 +26,7 @@ from .output import (
     print_success,
 )
 from .paths import generate_output_filename, strip_trailing_whitespace_from_file
+from .pkgconfig import PkgConfig
 from .preprocessor import parse_function_pointer_typedefs, process_headers
 
 
@@ -36,8 +37,15 @@ def parse_arguments() -> argparse.Namespace:
         description="Generate Python ctypes bindings from shared libraries",
         epilog="""
 Examples:
+  # Using explicit library path:
   %(prog)s /usr/lib/libfreerdp.so.3
   %(prog)s --verbose /usr/lib/debug/usr/lib/libfreerdp.so.3.debug
+
+  # Using pkg-config to find library and include paths:
+  %(prog)s --pkgconfig freerdp3 --headers /usr/include/freerdp3/freerdp.h
+  %(prog)s --pkgconfig gtk4 --headers /usr/include/gtk-4.0/gtk/gtk.h
+
+  # Output options:
   %(prog)s --output my_bindings.py /path/to/library.so
   %(prog)s --output ./output/ /path/to/library.so
   %(prog)s --output output/bindings.py /path/to/library.so
@@ -49,7 +57,7 @@ Examples:
     parser.add_argument(
         "library_paths",
         metavar="LIBRARY_PATH",
-        nargs="+",
+        nargs="*",
         help="Path(s) to the shared library or debug file to analyze",
     )
 
@@ -105,9 +113,23 @@ Examples:
         help="Additional include paths for header preprocessing",
     )
 
+    parser.add_argument(
+        "--pkgconfig",
+        metavar="PACKAGE",
+        help="""Use pkg-config to find library and include paths for the given package (e.g., freerdp3, gtk4).
+If no explicit library paths are provided, will attempt to find the library files automatically.
+Use with --headers to specify which header files to process.""",
+    )
+
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Validate that we have library paths if not using pkgconfig
+    if not args.pkgconfig and not args.library_paths:
+        parser.error("At least one library path is required when not using --pkgconfig")
+
+    return args
 
 
 def run_generation_pipeline(args: argparse.Namespace) -> None:
@@ -122,7 +144,69 @@ def run_generation_pipeline(args: argparse.Namespace) -> None:
     # Set up logging
     logger = setup_logging(verbose=args.verbose, use_color=use_color)
 
-    print_banner(use_color=use_color)
+    print_banner("pybindlib — Generate ctypes Python bindings", use_color=use_color)
+
+    # Query pkg-config if requested
+    library_paths = list(args.library_paths)  # Convert to list to allow modification
+    if args.pkgconfig:
+        print_section_header("Querying pkg-config", use_color=use_color)
+        try:
+            pkg_config = PkgConfig()
+            pkg_info = pkg_config.query(args.pkgconfig)
+            logger.info(f"Found package {args.pkgconfig}")
+
+            # Add include paths from pkg-config
+            if not args.include_paths:
+                args.include_paths = []
+            args.include_paths.extend(pkg_info.get_include_dirs())
+            logger.info(f"Added {len(pkg_info.get_include_dirs())} include paths from pkg-config")
+
+            if args.verbose:
+                for path in pkg_info.get_include_dirs():
+                    logger.debug(f"Include path: {path}")
+
+            # If no library paths provided, try to find them from pkg-config
+            if not library_paths:
+                # pkg-config --libs returns -L/path/to/lib -lfoo, we need to combine them
+                lib_dirs = pkg_info.get_library_dirs()
+                lib_names = pkg_info.get_library_names()
+
+                for lib_name in lib_names:
+                    found = False
+                    for lib_dir in lib_dirs:
+                        # Try common library name patterns
+                        patterns = [
+                            f"lib{lib_name}.so",
+                            f"lib{lib_name}.so.*",
+                            f"lib{lib_name}-*.so",
+                        ]
+                        for pattern in patterns:
+                            import glob
+                            matches = glob.glob(os.path.join(lib_dir, pattern))
+                            if matches:
+                                # Sort to get the highest version number if multiple matches
+                                matches.sort()
+                                library_paths.append(matches[-1])
+                                found = True
+                                logger.info(f"Found library: {matches[-1]}")
+                                break
+                        if found:
+                            break
+
+                    if not found:
+                        logger.warning(f"Could not find library for {lib_name}")
+
+        except Exception as e:
+            logger.error(f"Failed to query pkg-config: {e}")
+            sys.exit(1)
+
+    # Ensure we have at least one library path
+    if not library_paths:
+        logger.error("No library paths provided and could not find any via pkg-config")
+        sys.exit(1)
+
+    # Update args.library_paths for the rest of the pipeline
+    args.library_paths = library_paths
 
     # Preprocess headers once if provided
     macros_from_headers: dict[str, str] = {}
