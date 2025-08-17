@@ -42,8 +42,8 @@ Examples:
   %(prog)s --verbose /usr/lib/debug/usr/lib/libfreerdp.so.3.debug
 
   # Using pkg-config to find library and include paths:
-  %(prog)s --pkgconfig freerdp3 --headers /usr/include/freerdp3/freerdp.h
-  %(prog)s --pkgconfig gtk4 --headers /usr/include/gtk-4.0/gtk/gtk.h
+  %(prog)s --pkgconfig freerdp3 --headers freerdp/freerdp.h
+  %(prog)s --pkgconfig gtk4 --headers gtk/gtk.h
 
   # Output options:
   %(prog)s --output my_bindings.py /path/to/library.so

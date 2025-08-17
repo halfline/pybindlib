@@ -12,6 +12,7 @@ A tool to help generate Python ctypes bindings from shared libraries. It reads D
 - Provides clean imports like `from mylib.types import MyStruct`
 - Extracts constants and macros from header files
 - Automatically discovers library paths using pkg-config
+- Supports relative header paths (e.g., `freerdp/freerdp.h` with `-I /usr/include/freerdp3`)
 
 ## Requirements
 
@@ -47,10 +48,10 @@ Generate bindings for a shared library:
 pybindlib /usr/lib/libexample.so
 
 # Extract constants from headers
-pybindlib --headers /usr/include/example.h /usr/lib/libexample.so
+pybindlib --headers example.h /usr/lib/libexample.so
 
 # Add include paths for header processing
-pybindlib -I /usr/include -I /usr/local/include --headers /usr/include/example.h /usr/lib/libexample.so
+pybindlib -I /usr/include -I /usr/local/include --headers example.h /usr/lib/libexample.so
 
 # Specify output file
 pybindlib -o bindings.py /usr/lib/libexample.so
@@ -59,7 +60,7 @@ pybindlib -o bindings.py /usr/lib/libexample.so
 pybindlib -o output/ libone.so libtwo.so
 
 # Use pkg-config to find library and include paths
-pybindlib --pkgconfig freerdp3 --headers /usr/include/freerdp3/freerdp.h
+pybindlib --pkgconfig freerdp3 --headers freerdp/freerdp.h
 
 # Enable verbose output
 pybindlib -v /usr/lib/libexample.so

@@ -1,12 +1,16 @@
 """
-Tests for the paths module.
+Tests for path handling utilities.
 """
 
 import os
 import pytest
 from unittest.mock import patch, mock_open, MagicMock
 
-from pybindlib.paths import generate_output_filename, strip_trailing_whitespace_from_file
+from pybindlib.paths import (
+    generate_output_filename,
+    resolve_header_path,
+    strip_trailing_whitespace_from_file,
+)
 
 
 def test_generate_output_filename():
@@ -26,6 +30,68 @@ def test_generate_output_filename():
 
     # Test empty library name
     assert generate_output_filename("", "/path/to/libtest.so") == "libtest_so.py"
+
+
+def test_resolve_header_path_absolute():
+    """Test resolving absolute header paths."""
+    path = "/usr/include/freerdp3/freerdp.h"
+    assert resolve_header_path(path) == path
+
+
+def test_resolve_header_path_relative_current_dir(tmp_path):
+    """Test resolving header in current directory."""
+    # Create a test header file
+    header = tmp_path / "test.h"
+    header.write_text("")
+
+    # Save current directory
+    old_cwd = os.getcwd()
+    try:
+        # Change to temp directory
+        os.chdir(str(tmp_path))
+        result = resolve_header_path("test.h")
+        assert os.path.samefile(result, header)
+    finally:
+        # Restore current directory
+        os.chdir(old_cwd)
+
+
+def test_resolve_header_path_include_paths(tmp_path):
+    """Test resolving header using include paths."""
+    # Create test directories and file
+    include_dir = tmp_path / "include"
+    include_dir.mkdir()
+    header = include_dir / "test.h"
+    header.write_text("")
+
+    result = resolve_header_path("test.h", include_paths=[str(include_dir)])
+    assert os.path.samefile(result, header)
+
+
+def test_resolve_header_path_multiple_include_paths(tmp_path):
+    """Test resolving header with multiple include paths."""
+    # Create test directories and files
+    include1 = tmp_path / "include1"
+    include2 = tmp_path / "include2"
+    include1.mkdir()
+    include2.mkdir()
+
+    # Put header in second include path
+    header = include2 / "test.h"
+    header.write_text("")
+
+    result = resolve_header_path(
+        "test.h",
+        include_paths=[str(include1), str(include2)]
+    )
+    assert os.path.samefile(result, header)
+
+
+def test_resolve_header_path_not_found():
+    """Test behavior when header is not found."""
+    path = "nonexistent.h"
+    include_paths = ["/usr/include", "/usr/local/include"]
+    assert resolve_header_path(path, include_paths) == path
 
 
 def test_strip_trailing_whitespace_from_file(temp_file):

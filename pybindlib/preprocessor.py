@@ -9,6 +9,7 @@ import subprocess
 
 # Local imports
 from .logging import logger
+from .paths import resolve_header_path
 
 
 def process_headers(
@@ -200,13 +201,17 @@ def process_headers(
     # Process each header file
     for header in header_files:
         try:
-            cmd = cpp_cmd + [header]
+            # Resolve header path using include paths
+            resolved_header = resolve_header_path(header, include_paths)
+            logger.debug(f"Resolved header path: {resolved_header}")
+
+            cmd = cpp_cmd + [resolved_header]
             result = subprocess.run(
                 cmd, check=False, capture_output=True, text=True
             )
             if result.returncode != 0:
                 logger.warning(
-                    f"Failed to preprocess {header}: {result.stderr}"
+                    f"Failed to preprocess {resolved_header}: {result.stderr}"
                 )
                 continue
             _parse_cpp_output(result.stdout)
@@ -236,7 +241,9 @@ def parse_function_pointer_typedefs(header_files: list[str]) -> set[str]:
 
     for path in header_files:
         try:
-            with open(path, encoding="utf-8", errors="ignore") as fh:
+            # Resolve header path using include paths
+            resolved_path = resolve_header_path(path)
+            with open(resolved_path, encoding="utf-8", errors="ignore") as fh:
                 text = fh.read()
                 for match in pattern.finditer(text):
                     name = match.group(1)
